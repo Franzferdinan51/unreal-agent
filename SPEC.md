@@ -95,7 +95,7 @@ Tools from the UE MCP server are dynamically added to the model's tool schema vi
 ## Commands
 
 ```
-unreal-agent run "<prompt>"              One-shot, stream output, exit
+unreal-agent run "<prompt>"              One-shot, print final output, exit
 unreal-agent chat                        Interactive REPL with UE context
 unreal-agent mcp list                    List tools from UE MCP server
 unreal-agent mcp call <tool> <json>      Direct MCP tool call
@@ -106,6 +106,8 @@ unreal-agent --provider <id>             Override default provider
 unreal-agent version                     Print version
 unreal-agent help                        Show help
 ```
+
+`chat` should behave like a real multi-turn terminal REPL for UE tasks, carrying transcript state across turns until the user clears or exits.
 
 ---
 

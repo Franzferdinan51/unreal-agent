@@ -24,6 +24,7 @@ export interface LoopResult {
   final: string;
   iterations: number;
   toolCallsUsed: ToolCallRecord[];
+  transcript: ChatMessage[];
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -64,10 +65,15 @@ export async function runAgentLoop(opts: LoopOpts): Promise<LoopResult> {
     totalOutput += resp.usage.outputTokens;
 
     if (!resp.tool_calls || resp.tool_calls.length === 0) {
+      messages.push({
+        role: "assistant",
+        content: resp.content,
+      });
       return {
         final: resp.content,
         iterations: i + 1,
         toolCallsUsed,
+        transcript: messages,
         usage: { inputTokens: totalInput, outputTokens: totalOutput },
       };
     }
@@ -147,10 +153,15 @@ export async function runAgentLoop(opts: LoopOpts): Promise<LoopResult> {
   });
   totalInput += last.usage.inputTokens;
   totalOutput += last.usage.outputTokens;
+  messages.push({
+    role: "assistant",
+    content: last.content,
+  });
   return {
     final: last.content,
     iterations: maxIter + 1,
     toolCallsUsed,
+    transcript: messages,
     usage: { inputTokens: totalInput, outputTokens: totalOutput },
   };
 }

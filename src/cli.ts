@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as os from "node:os";
 import { promises as fs } from "node:fs";
+import * as readline from "node:readline/promises";
 // Unreal Agent — CLI entry point
 //
 // Commands:
@@ -25,6 +26,7 @@ import { runMoA } from "./agent/moa/orchestrator.js";
 import { printMoAConfig, runMoASubcommand } from "./agent/moa/cli.js";
 import { loadMoAConfig, savePreset, deletePreset } from "./agent/moa/config-store.js";
 import type { ChatMessage } from "./types.js";
+import type { ToolDefinition } from "./types.js";
 import { detectUproject, loadUproject, ueContext, type UeProject } from "./ue/project.js";
 
 const VERSION = "0.1.0";
@@ -102,7 +104,7 @@ function help() {
 Usage: unreal-agent <command> [options]
 
 Commands:
-  run "<prompt>"              One-shot tool-use loop, stream final output
+  run "<prompt>"              One-shot tool-use loop, print final output
   chat                        Interactive REPL with UE project context
   moa [list]                  List MoA presets (Hermes canonical architecture)
   moa preset <name> -- "..."  Run prompt through named MoA preset
@@ -117,7 +119,7 @@ Commands:
   help                        Show this help
 
 Options:
-  --provider <id>             Override default provider (minimax/grok/openrouter)
+  --provider <id>             Override default provider (minimax/lmstudio/ollama/openai/grok/openrouter/custom)
   --model <name>              Override default model
   --mcp-url <url>             Override UE MCP server URL (default: http://127.0.0.1:8000/mcp)
   --preset <name>             Enable MoA with named preset for run/chat
@@ -140,7 +142,7 @@ Examples:
 
 Config:
   ./.unreal-agent.json or ~/.unreal-agent/config.json
-  Env: MINIMAX_API_KEY, GROK_API_KEY, OPENROUTER_API_KEY, UE_PROJECT, UE_MCP_URL
+  Env: UE_AGENT_PROVIDER, UE_AGENT_MODEL, OPENAI_API_KEY, MINIMAX_API_KEY, GROK_API_KEY, OPENROUTER_API_KEY, LMSTUDIO_BASE_URL, OLLAMA_BASE_URL, UE_PROJECT, UE_MCP_URL
 `);
 }
 
@@ -156,8 +158,45 @@ async function detectProject(cfg: any): Promise<UeProject | null> {
 }
 
 async function chat(cfg: any, positional?: string[], moaCfg?: any, presetOverride?: string) {
-  const p = (positional ?? []).slice(1).join(" ") || "What can you help with in this UE project?";
-  return runOnce(p, cfg, moaCfg, presetOverride);
+  const initialPrompt = (positional ?? []).slice(1).join(" ").trim();
+  const project = await detectProject(cfg);
+  const systemPrompt = buildSystemPrompt(project);
+  const runtime = await createToolRuntime(cfg);
+  let messages: ChatMessage[] = [{ role: "system", content: systemPrompt }];
+
+  console.error(`[unreal-agent] chat provider=${cfg.provider} model=${cfg.model} mcp=${cfg.mcpUrl}`);
+  console.error(`[unreal-agent] cwd=${process.cwd()}${project ? ` uproject=${project.uprojectPath}` : ""}`);
+  console.error("[unreal-agent] commands: /exit /quit /clear /help");
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    if (initialPrompt) {
+      messages = await runChatTurn(initialPrompt, messages, cfg, runtime.tools, moaCfg, presetOverride);
+    }
+
+    while (true) {
+      const input = (await rl.question("ue> ")).trim();
+      if (!input) continue;
+      if (input === "/exit" || input === "/quit") break;
+      if (input === "/clear") {
+        messages = [{ role: "system", content: systemPrompt }];
+        console.error("[unreal-agent] conversation cleared");
+        continue;
+      }
+      if (input === "/help") {
+        console.error("[unreal-agent] /exit or /quit leaves chat, /clear resets the transcript");
+        continue;
+      }
+      messages = await runChatTurn(input, messages, cfg, runtime.tools, moaCfg, presetOverride);
+    }
+  } finally {
+    rl.close();
+    runtime.mcp?.close();
+  }
 }
 
 async function runOnce(prompt: string, cfg: any, moaCfg?: any, presetOverride?: string) {
@@ -178,29 +217,8 @@ async function runOnce(prompt: string, cfg: any, moaCfg?: any, presetOverride?: 
 
   // MoA path: run through preset (if --preset given)
   if (presetOverride) {
-    // Discover MCP tools first
-    const tools = [...defaultTools()];
-    let mcp: UnrealMcpClient | null = null;
-    try {
-      mcp = new UnrealMcpClient({ baseUrl: cfg.mcpUrl });
-      await mcp.initialize();
-      const specs = await mcp.getToolSpecs();
-      for (const spec of specs) {
-        tools.push({
-          name: spec.name,
-          description: `[MCP] ${spec.description ?? ""}`,
-          parameters: spec.parameters,
-          handler: async (args) => {
-            const r = await mcp!.callTool(spec.originalName, args);
-            if (!r.ok) return { content: `MCP error: ${r.error}`, isError: true };
-            const text = (r.content ?? []).map((c: any) => c.text ?? JSON.stringify(c)).join("\n");
-            return { content: text || "(no content)" };
-          },
-        });
-      }
-    } catch (e: any) {
-      console.error(`[unreal-agent] MCP unavailable: ${e?.message ?? e}`);
-    }
+    const runtime = await createToolRuntime(cfg);
+    const { tools, mcp } = runtime;
 
     const pName = presetOverride ?? moaCfg?.moa?.default_preset ?? "default";
     console.error(`[unreal-agent] MoA preset: ${pName}`);
@@ -249,32 +267,8 @@ async function runOnce(prompt: string, cfg: any, moaCfg?: any, presetOverride?: 
   }
 
   // Default: tool-use loop
-  const tools = defaultTools();
-  let mcp: UnrealMcpClient | null = null;
-  try {
-    mcp = new UnrealMcpClient({ baseUrl: cfg.mcpUrl });
-    await mcp.initialize();
-    const mcpToolSpecs = await mcp.getToolSpecs();
-    if (mcpToolSpecs.length > 0) {
-      console.error(`[unreal-agent] MCP server: ${mcp.getServerInfo()?.name} (${mcpToolSpecs.length} tools)`);
-      for (const spec of mcpToolSpecs) {
-        tools.push({
-          name: spec.name,
-          description: `[MCP] ${spec.description}`,
-          parameters: spec.parameters,
-          handler: async (args) => {
-            const realName = spec.name.replace(/^mcp__/, "").replace(/_/g, "-");
-            const r = await mcp!.callTool(realName, args);
-            if (!r.ok) return { content: `MCP error: ${r.error}`, isError: true };
-            const text = (r.content ?? []).map((c: any) => c.text ?? JSON.stringify(c)).join("\n");
-            return { content: text || "(no content)" };
-          },
-        });
-      }
-    }
-  } catch (e: any) {
-    console.error(`[unreal-agent] MCP unavailable: ${e?.message ?? e}`);
-  }
+  const runtime = await createToolRuntime(cfg);
+  const { tools, mcp } = runtime;
 
   const result = await runAgentLoop({
     provider: cfg.provider,
@@ -299,6 +293,93 @@ async function runOnce(prompt: string, cfg: any, moaCfg?: any, presetOverride?: 
   }
 
   if (mcp) mcp.close();
+}
+
+async function runChatTurn(
+  prompt: string,
+  messages: ChatMessage[],
+  cfg: any,
+  tools: ToolDefinition[],
+  moaCfg?: any,
+  presetOverride?: string,
+): Promise<ChatMessage[]> {
+  if (presetOverride) {
+    const toolSchemas = tools.map((t) => ({
+      type: "function" as const,
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+    const pName = presetOverride ?? moaCfg?.moa?.default_preset ?? "default";
+    const result = await runMoA({
+      prompt,
+      presetName: pName,
+      history: messages,
+      tools: toolSchemas,
+      toolsFn: async (_pn: string, fullHistory: any[]) => {
+        const r = await runAgentLoop({
+          provider: cfg.provider,
+          model: cfg.model,
+          messages: fullHistory,
+          tools,
+          cwd: process.cwd(),
+          temperature: 0.4,
+          maxTokens: 4096,
+        });
+        return { output: r.final, toolCallsUsed: r.toolCallsUsed };
+      },
+    });
+    const finalText = result.toolResult?.output ?? result.response;
+    process.stdout.write(`${finalText}\n`);
+    return [
+      ...messages,
+      { role: "user", content: prompt },
+      { role: "assistant", content: finalText },
+    ];
+  }
+
+  const turnMessages: ChatMessage[] = [...messages, { role: "user", content: prompt }];
+  const result = await runAgentLoop({
+    provider: cfg.provider,
+    model: cfg.model,
+    messages: turnMessages,
+    tools,
+    cwd: process.cwd(),
+    temperature: 0.4,
+    maxTokens: 4096,
+  });
+  process.stdout.write(`${result.final}\n`);
+  if (result.toolCallsUsed.length > 0) {
+    console.error(`[unreal-agent] tools: ${result.toolCallsUsed.map((t) => t.name).join(", ")}`);
+  }
+  return result.transcript;
+}
+
+async function createToolRuntime(cfg: any): Promise<{ tools: ToolDefinition[]; mcp: UnrealMcpClient | null }> {
+  const tools = defaultTools();
+  let mcp: UnrealMcpClient | null = null;
+  try {
+    mcp = new UnrealMcpClient({ baseUrl: cfg.mcpUrl });
+    await mcp.initialize();
+    const mcpToolSpecs = await mcp.getToolSpecs();
+    if (mcpToolSpecs.length > 0) {
+      console.error(`[unreal-agent] MCP server: ${mcp.getServerInfo()?.name} (${mcpToolSpecs.length} tools)`);
+      for (const spec of mcpToolSpecs) {
+        tools.push({
+          name: spec.name,
+          description: `[MCP] ${spec.description}`,
+          parameters: spec.parameters,
+          handler: async (args) => {
+            const r = await mcp!.callTool(spec.originalName, args);
+            if (!r.ok) return { content: `MCP error: ${r.error}`, isError: true };
+            const text = (r.content ?? []).map((c: any) => c.text ?? JSON.stringify(c)).join("\n");
+            return { content: text || "(no content)" };
+          },
+        });
+      }
+    }
+  } catch (e: any) {
+    console.error(`[unreal-agent] MCP unavailable: ${e?.message ?? e}`);
+  }
+  return { tools, mcp };
 }
 
 function buildSystemPrompt(project: UeProject | null): string {

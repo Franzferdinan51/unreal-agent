@@ -10,6 +10,7 @@ Built fresh, separate from DuckHive-CLI and the existing CodingHarness. Connects
 - HTTP-only MCP client (UE 5.8 native runs over HTTP POST + JSON-RPC 2.0)
 - Reads `.uproject` and injects UE context into every system prompt
 - Tool-use loop with up to 10 iterations of bash / read / write / edit / MCP
+- Interactive terminal chat loop for multi-turn UE work
 `─────────────────────────────────────────────`
 
 ## Install
@@ -29,6 +30,9 @@ cp .env.example .env   # fill in keys
 
 # One-shot task with full tool-use loop
 ./bin/unreal-agent run "list every C++ class in Source/"
+
+# Interactive chat
+./bin/unreal-agent chat
 
 # MCP direct
 ./bin/unreal-agent mcp list
@@ -71,6 +75,15 @@ src/
 | `find` | local | Glob find files |
 | `bash` | local | Run shell command |
 | `mcp__*` | MCP | All tools exposed by the connected MCP server |
+
+## Chat
+
+`./bin/unreal-agent chat` now runs a real multi-turn REPL instead of a one-shot alias.
+
+Built-in chat commands:
+- `/help`
+- `/clear`
+- `/exit` or `/quit`
 
 ## Config
 
