@@ -15,114 +15,57 @@
 
 import type {
   ChatMessage,
-  MoAPresetConfig,
   MoAResult,
   MoARunOpts,
   ReferenceOutput,
-  ToolSpec,
-  ToolCallResult,
 } from "./types.js";
 import { loadMoAConfig } from "./config-store.js";
-import { resolveAll } from "../../providers/registry.js";
 import { callProvider } from "../../providers/client.js";
-
-const MAX_WORKERS = 8;
+import { resolveAll } from "../../providers/registry.js";
+import {
+  extractText,
+  MAX_REFERENCE_WORKERS,
+  referenceMessages,
+  REFERENCE_SYSTEM_PROMPT,
+  resolveSlotRuntime,
+} from "./advisory.js";
 
 function slotLabel(slot: { provider: string; model: string }): string {
   return `${slot.provider}:${slot.model}`;
 }
 
-// ── Text extraction (transport-tolerant) ──────────────────────────────────────
-
-function extractText(response: any): string {
-  try {
-    if (response?.status === "error") return "";
-    const raw = response?.choices?.[0]?.message?.content;
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  } catch { /* */ }
-  try {
-    const blocks = response?.content;
-    if (Array.isArray(blocks)) {
-      const text = blocks
-        .filter((b: any) => b?.type === "text")
-        .map((b: any) => b.text)
-        .join("\n")
-        .trim();
-      if (text) return text;
-    }
-  } catch { /* */ }
-  return "";
-}
-
-// ── Trimmed advisory view (Hermes) ────────────────────────────────────────────
-
-/**
- * Build the trimmed advisory view for reference models.
- * User/assistant text only — no system prompt, no tool messages.
- * Matches Hermes moa_loop.py _reference_messages.
- */
-function trimForReference(messages: ChatMessage[]): ChatMessage[] {
-  const trimmed: ChatMessage[] = [];
-  for (const msg of messages) {
-    const role = msg.role;
-    if (role !== "user" && role !== "assistant") continue;
-    const content = typeof msg.content === "string" ? msg.content : "";
-    if (!content.trim()) continue;
-    trimmed.push({ role, content });
-  }
-  // Must end on a user turn — Hermes rule
-  if (trimmed.length > 0 && trimmed[trimmed.length - 1].role === "assistant") {
-    for (let i = trimmed.length - 2; i >= 0; i--) {
-      if (trimmed[i].role === "user") {
-        const instruction =
-          "\n\n[The conversation above is the current state of the task. " +
-          "Give your most intelligent judgement: what is going on, what should " +
-          "happen next, and how should the acting agent proceed?]";
-        trimmed[i] = { ...trimmed[i], content: trimmed[i].content + instruction };
-        break;
-      }
-    }
-  }
-  return trimmed;
-}
-
-// ── Reference system prompt (Hermes) ─────────────────────────────────────────
-
-const REFERENCE_SYSTEM_PROMPT = `You are a reference advisor in a Mixture of Agents (MoA) process. You are NOT the acting agent and you do NOT execute anything: you cannot call tools, run commands, browse, or access files, repositories, or URLs, and you should not try to or apologize for being unable to. A separate aggregator/orchestrator model holds those capabilities and will take the actual actions.
-
-The conversation below is the current state of a task handled by that acting agent. Your job is to give your most intelligent analysis of that state: understand the goal, reason about the problem, and advise on what to do next. Surface the best approach, concrete next steps and tool-use strategy, likely pitfalls and risks, and anything the acting agent may have missed or gotten wrong. Assume any referenced files, URLs, or systems exist and reason about them from the context given rather than asking for access.
-
-Respond with your advice directly — no preamble, no disclaimers about tools or access. Your response is private guidance handed to the aggregator, not an answer shown to the user.`;
-
-// ── Parallel reference fan-out ────────────────────────────────────────────────
-
 async function runReferencesParallel(
   slots: { provider: string; model: string }[],
+  registry: ReturnType<typeof resolveAll>,
   refMessages: ChatMessage[],
   temperature: number,
   maxTokens: number,
 ): Promise<Array<[string, string]>> {
   if (!slots || slots.length === 0) return [];
-  const refs = slots.slice(0, MAX_WORKERS);
-  const futures = refs.map((slot) => runReference(slot, refMessages, temperature, maxTokens));
+  const refs = slots.slice(0, MAX_REFERENCE_WORKERS);
+  const futures = refs.map((slot) => runReference(slot, registry, refMessages, temperature, maxTokens));
   return Promise.all(futures);
 }
 
 async function runReference(
   slot: { provider: string; model: string },
+  registry: ReturnType<typeof resolveAll>,
   refMessages: ChatMessage[],
   temperature: number,
   maxTokens: number,
 ): Promise<[string, string]> {
   const label = slotLabel(slot);
   try {
+    const runtime = resolveSlotRuntime(slot, registry);
     const messages: ChatMessage[] = [{ role: "system", content: REFERENCE_SYSTEM_PROMPT }, ...refMessages];
     const resp = await callProvider({
-      provider: slot.provider,
-      model: slot.model,
+      provider: runtime.provider,
+      model: runtime.model,
       messages,
       temperature,
       maxTokens,
+      baseUrl: runtime.baseUrl,
+      apiKey: runtime.apiKey,
     });
     const text = extractText(resp);
     return [label, text || "(empty response)"];
@@ -159,6 +102,7 @@ Your synthesized response:`;
 /** Run MoA (Agent Teams moa-runtime.js signature). */
 export async function runMoA(opts: MoARunOpts): Promise<MoAResult> {
   const cfg = await loadMoAConfig();
+  const registry = resolveAll();
   const presetName = opts.presetName ?? cfg.moa.default_preset ?? "default";
   const preset = cfg.moa.presets?.[presetName];
 
@@ -178,11 +122,12 @@ export async function runMoA(opts: MoARunOpts): Promise<MoAResult> {
 
   if (preset.enabled !== false && preset.reference_models?.length > 0) {
     // Step 1: trimmed advisory view
-    const refMessages = trimForReference(messages);
+    const refMessages = referenceMessages(messages);
 
     // Step 2: fan out references in parallel
     const outputs = await runReferencesParallel(
       preset.reference_models,
+      registry,
       refMessages,
       preset.reference_temperature ?? 0.6,
       preset.reference_max_tokens ?? 1024,
@@ -199,12 +144,15 @@ export async function runMoA(opts: MoARunOpts): Promise<MoAResult> {
 
   let aggResp = "";
   try {
+    const runtime = resolveSlotRuntime(preset.aggregator, registry);
     const resp = await callProvider({
-      provider: preset.aggregator.provider,
-      model: preset.aggregator.model,
+      provider: runtime.provider,
+      model: runtime.model,
       messages: [{ role: "user", content: synthPrompt }],
       temperature: preset.aggregator_temperature ?? 0.4,
       maxTokens: 2048,
+      baseUrl: runtime.baseUrl,
+      apiKey: runtime.apiKey,
     });
     aggResp = extractText(resp) || "(empty response)";
   } catch (exc: any) {

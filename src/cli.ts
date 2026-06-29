@@ -59,7 +59,12 @@ async function main() {
   }
 
   const cfg = await loadConfig();
-  if (providerOverride) cfg.provider = providerOverride;
+  if (providerOverride) {
+    cfg.provider = providerOverride;
+    if (!modelOverride) {
+      cfg.model = resolveProvider(providerOverride).model;
+    }
+  }
   if (modelOverride) cfg.model = modelOverride;
   if (mcpUrlOverride) cfg.mcpUrl = mcpUrlOverride;
 

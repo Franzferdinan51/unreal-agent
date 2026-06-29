@@ -9,8 +9,8 @@ import type { MoASlot } from "./types.js";
 export interface SlotCall {
   provider: string;
   model: string;
-  base_url?: string;
-  api_key?: string;
+  baseUrl?: string;
+  apiKey?: string;
 }
 
 /** Per-tool-result char budget for the advisory view. Replayed tool results
@@ -43,8 +43,8 @@ export function resolveSlotRuntime(slot: MoASlot, registry: Map<string, any>): S
     if (["nous", "openai-codex", "xai-oauth"].includes(slot.provider.toLowerCase())) {
       return out;
     }
-    if (entry.baseUrl) out.base_url = entry.baseUrl.replace(/\/$/, "");
-    if (entry.apiKey) out.api_key = entry.apiKey;
+    if (entry.baseUrl) out.baseUrl = entry.baseUrl.replace(/\/$/, "");
+    if (entry.apiKey) out.apiKey = entry.apiKey;
   } catch {
     /* fall back to bare provider/model — callProvider will still try */
   }

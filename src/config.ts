@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { UnrealAgentConfig } from "./types.js";
+import { resolveProvider } from "./providers/registry.js";
 
 export const DEFAULT_MCP_URL = "http://127.0.0.1:8000/mcp";
 
@@ -39,9 +40,22 @@ function mergeConfig(
   env: NodeJS.ProcessEnv,
 ): UnrealAgentConfig {
   const merged: UnrealAgentConfig = { ...base, ...override } as UnrealAgentConfig;
-  // Allow env to override active provider/model/mcpUrl
-  if (env.UE_AGENT_PROVIDER) merged.provider = env.UE_AGENT_PROVIDER;
-  if (env.UE_AGENT_MODEL) merged.model = env.UE_AGENT_MODEL;
+  const provider = env.UE_AGENT_PROVIDER ?? override.provider ?? base.provider;
+  merged.provider = provider;
+
+  const explicitModel =
+    env.UE_AGENT_MODEL ??
+    (typeof override.model === "string" && override.model.trim() ? override.model : undefined);
+  if (explicitModel) {
+    merged.model = explicitModel;
+  } else {
+    try {
+      merged.model = resolveProvider(provider).model;
+    } catch {
+      merged.model = base.model;
+    }
+  }
+
   if (env.UE_MCP_URL) merged.mcpUrl = env.UE_MCP_URL;
   if (env.UE_PROJECT) merged.ueProject = env.UE_PROJECT;
   return merged;

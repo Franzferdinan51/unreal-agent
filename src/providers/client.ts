@@ -116,7 +116,8 @@ export async function* streamProvider(opts: ChatCallOpts): AsyncGenerator<string
     "Content-Type": "application/json",
     Accept: "text/event-stream",
   };
-  if (resolved.apiKey) headers["Authorization"] = `Bearer ${resolved.apiKey}`;
+  const apiKey = opts.apiKey ?? resolved.apiKey;
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
   const resp = await fetch(url, {
     method: "POST",

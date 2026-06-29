@@ -137,6 +137,8 @@ When detected, the agent prepends a brief UE context (engine version, project na
 }
 ```
 
+Provider selection and model selection should stay coupled: if the active provider changes and no explicit model override is supplied, the harness should fall back to that provider's configured default model/env-resolved model.
+
 ---
 
 ## Differences from DuckHive-CLI (by design)

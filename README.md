@@ -87,11 +87,14 @@ Search path (first match wins):
 ```
 
 Env overrides:
+- `UE_AGENT_PROVIDER`, `UE_AGENT_MODEL`
 - `MINIMAX_API_KEY`, `MINIMAX_MODEL`
 - `GROK_API_KEY`, `GROK_MODEL`
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`
 - `UE_PROJECT` (path to .uproject)
 - `UE_MCP_URL` (default `http://127.0.0.1:8000/mcp`)
+
+If you switch providers without setting a model explicitly, the harness now follows that provider's configured default model automatically.
 
 ## UE 5.8 MCP server
 
