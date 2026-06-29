@@ -5,7 +5,8 @@
 Built fresh, separate from DuckHive-CLI and the existing CodingHarness. Connects to the UE 5.8 native MCP server at `http://127.0.0.1:8000/mcp` (or any MCP-compatible server you point it at).
 
 `★ Insight ─────────────────────────────────────`
-- Cloud-only models (MiniMax M2.7 primary) — no local model dependency
+- Built-in provider profiles for MiniMax, LM Studio, Ollama, OpenAI, Grok, and OpenRouter
+- Custom provider profiles can be added in config for other OpenAI-compatible Hermes-style runtimes
 - HTTP-only MCP client (UE 5.8 native runs over HTTP POST + JSON-RPC 2.0)
 - Reads `.uproject` and injects UE context into every system prompt
 - Tool-use loop with up to 10 iterations of bash / read / write / edit / MCP
@@ -48,7 +49,7 @@ src/
 ├── config.ts               ~/.unreal-agent/config.json loader
 ├── types.ts                Core types
 ├── providers/
-│   ├── registry.ts         MiniMax, Grok, OpenRouter
+│   ├── registry.ts         Built-in + custom provider profiles
 │   └── client.ts           OpenAI-protocol caller + streamer
 ├── agent/
 │   ├── loop.ts             Tool-use loop (up to 10 iterations)
@@ -88,13 +89,31 @@ Search path (first match wins):
 
 Env overrides:
 - `UE_AGENT_PROVIDER`, `UE_AGENT_MODEL`
+- `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `MINIMAX_API_KEY`, `MINIMAX_MODEL`
 - `GROK_API_KEY`, `GROK_MODEL`
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`
+- `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`
 - `UE_PROJECT` (path to .uproject)
 - `UE_MCP_URL` (default `http://127.0.0.1:8000/mcp`)
 
 If you switch providers without setting a model explicitly, the harness now follows that provider's configured default model automatically.
+
+Custom providers can be added in config:
+
+```json
+{
+  "provider": "mygateway",
+  "providers": {
+    "mygateway": {
+      "label": "My Gateway",
+      "defaultBaseUrl": "https://llm.example.com/v1",
+      "defaultModel": "qwen/qwen3-coder"
+    }
+  }
+}
+```
 
 ## UE 5.8 MCP server
 
@@ -107,15 +126,14 @@ curl -s -X POST http://127.0.0.1:8000/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}'
 ```
 
-## Cloud-only rule
+## Providers
 
-Per Duckets' directive 2026-06-10, no local models. MiniMax is the primary provider. Override with `--provider` flag.
+MiniMax is the default, but the harness can also run against LM Studio, Ollama, OpenAI, Grok, OpenRouter, and additional OpenAI-compatible providers defined in config.
 
 ## What's NOT here
 
 By design (this is task-specific, not a general CLI):
 
-- ❌ No MoA (mix-of-agents)
 - ❌ No council
 - ❌ No sub-agents
 - ❌ No skill system (yet)

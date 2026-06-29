@@ -2,7 +2,7 @@
 // Architecture from Agent Teams moa/moa-runtime.js + trimmed advisory view from Hermes.
 //
 // Pipeline (Agent Teams pattern):
-//   1. trimForReference — build advisory view (user/assistant text only, no sysprompt, no tool_calls)
+//   1. referenceMessages — build Hermes-style advisory view
 //   2. runReferencesParallel — fan out all refs in parallel (max 8 workers)
 //   3. buildAggregatorPrompt — synthesis prompt injected with reference outputs
 //   4. aggregator calls the model

@@ -9,7 +9,7 @@
 **Purpose:** AI-native coding harness purpose-built for Unreal Engine 5 development. Connects to the UE MCP server for editor-level integration.
 **Location:** `~/Desktop/Unreal-Agent/`
 **Repo:** TBD (likely `Franzferdinan51/unreal-agent`)
-**Models:** Cloud-only — MiniMax primary (per Duckets 2026-06-10 rule)
+**Models:** MiniMax primary, with LM Studio and other OpenAI-compatible providers supported through built-in or custom provider profiles
 
 ---
 
@@ -24,7 +24,7 @@ unreal-agent
 │   ├── config.ts             # Config loader (~/.unreal-agent/config.json)
 │   ├── types.ts              # Core types
 │   ├── providers/
-│   │   ├── registry.ts       # MiniMax + Grok + OpenRouter
+│   │   ├── registry.ts       # Built-in + custom provider profiles
 │   │   └── client.ts         # OpenAI-protocol caller
 │   ├── agent/
 │   │   ├── loop.ts           # Tool-use agent loop
@@ -60,12 +60,12 @@ unreal-agent
 
 | Rank | Provider | Model | Use |
 |------|----------|-------|-----|
-| 1 | MiniMax | `minimax-portal/MiniMax-M2.7` | Primary — fast, cheap, good code |
-| 2 | MiniMax | `minimax-portal/MiniMax-M3` | Hard UE problems |
-| 3 | Grok | `grok-4.3` | Heavy reasoning |
-| 4 | OpenRouter | `deepseek/deepseek-v4-pro` | Free fallback |
+| 1 | MiniMax | `minimax-portal/MiniMax-M2.7` | Primary default |
+| 2 | LM Studio | user-supplied local model | Local OpenAI-compatible runtime |
+| 3 | OpenAI / Grok / OpenRouter / Ollama | provider default | Alternate built-in provider profiles |
+| 4 | Custom provider profile | config-defined | Additional OpenAI-compatible Hermes-style runtimes |
 
-**No MoA, no council.** This is task-specific — keep it lean. If needed, fall back to cloud model only.
+MoA is available and patterned after Hermes/Nous Research's implementation, but the harness remains UE-focused and lean compared with the full Hermes stack.
 
 ---
 
@@ -133,7 +133,14 @@ When detected, the agent prepends a brief UE context (engine version, project na
   "provider": "minimax",
   "model": "minimax-portal/MiniMax-M2.7",
   "mcpUrl": "http://127.0.0.1:8000/mcp",
-  "ueProject": null
+  "ueProject": null,
+  "providers": {
+    "mygateway": {
+      "label": "My Gateway",
+      "defaultBaseUrl": "https://llm.example.com/v1",
+      "defaultModel": "qwen/qwen3-coder"
+    }
+  }
 }
 ```
 
@@ -146,7 +153,7 @@ Provider selection and model selection should stay coupled: if the active provid
 | Feature | DuckHive-CLI | Unreal Agent |
 |---------|-------------|--------------|
 | Scope | General-purpose | UE-specific |
-| MoA | Core feature (4 presets) | Not included |
+| MoA | Core feature (4 presets) | Included in focused UE form |
 | Council | 9-voice deliberation | Not included |
 | MCP | Generic MCP server | UE MCP first-class, HTTP only |
 | Tool set | General | UE: read/write/edit/grep/bash/find + MCP relay |

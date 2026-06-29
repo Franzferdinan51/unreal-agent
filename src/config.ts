@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { UnrealAgentConfig } from "./types.js";
-import { resolveProvider } from "./providers/registry.js";
+import { resolveProvider, setCustomProviders } from "./providers/registry.js";
 
 export const DEFAULT_MCP_URL = "http://127.0.0.1:8000/mcp";
 
@@ -40,6 +40,11 @@ function mergeConfig(
   env: NodeJS.ProcessEnv,
 ): UnrealAgentConfig {
   const merged: UnrealAgentConfig = { ...base, ...override } as UnrealAgentConfig;
+  merged.providers = {
+    ...base.providers,
+    ...((override.providers as Record<string, unknown> | undefined) ?? {}),
+  } as UnrealAgentConfig["providers"];
+  setCustomProviders(merged.providers);
   const provider = env.UE_AGENT_PROVIDER ?? override.provider ?? base.provider;
   merged.provider = provider;
 
