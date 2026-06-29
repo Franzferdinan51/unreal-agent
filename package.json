@@ -1,0 +1,26 @@
+{
+  "name": "unreal-agent",
+  "version": "0.1.0",
+  "description": "Task-specific coding harness for Unreal Engine 5, MCP-aware",
+  "type": "module",
+  "bin": {
+    "unreal-agent": "./bin/unreal-agent"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node --import tsx/esm src/cli.ts",
+    "dev": "tsx src/cli.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": ["unreal", "ue5", "mcp", "coding", "agent", "duck-agent"],
+  "license": "MIT"
+}

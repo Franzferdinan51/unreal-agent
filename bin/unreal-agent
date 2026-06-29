@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Unreal Agent — entry point
+set -e
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(dirname "$DIR")"
+if [ -f "$ROOT/node_modules/.bin/tsx" ]; then
+  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/src/cli.ts" "$@"
+fi
+if command -v tsx >/dev/null 2>&1; then
+  exec tsx "$ROOT/src/cli.ts" "$@"
+fi
+if [ -f "$ROOT/dist/cli.js" ]; then
+  exec node "$ROOT/dist/cli.js" "$@"
+fi
+echo "unreal-agent: neither tsx nor dist/cli.js found — run 'npm install' or 'npm run build'" >&2
+exit 1
