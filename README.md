@@ -15,6 +15,8 @@ project context. It connects to the UE 5.8 native MCP server at
 - Reads `.uproject` and injects UE context into every system prompt
 - Tool-use loop with up to 10 iterations of bash / read / write / edit / MCP
 - Hermes-derived Unreal MCP skill installed at `.grok/skills/unreal-mcp/`
+- Grok Imagine game-asset skills installed under `.grok/skills/`: core assets,
+  animation frames, character consistency, tilesets, and UI icons
 - Grok Build headless adapter with streaming output and resumable sessions
 - Interactive terminal chat loop for multi-turn UE work
 `─────────────────────────────────────────────`

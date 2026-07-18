@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Tilesets"
+  short_description: "Create and validate seamless game tiles"
+  default_prompt: "Create a seamless tileset and validate it in a repeating Unreal layout."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Character Consistency"
+  short_description: "Keep game characters identity-locked"
+  default_prompt: "Create consistent character variants from one approved base reference."

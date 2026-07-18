@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Animation Frames"
+  short_description: "Build looping animation frames for Unreal"
+  default_prompt: "Create and verify a looping animation sequence for my Unreal project."

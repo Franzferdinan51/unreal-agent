@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Icons"
+  short_description: "Create consistent game UI icon systems"
+  default_prompt: "Create a complete, consistent UI icon and button-state set for Unreal."

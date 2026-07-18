@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Asset Core"
+  short_description: "Create organized, Unreal-ready game assets"
+  default_prompt: "Create an engine-ready game asset set for my Unreal project."
