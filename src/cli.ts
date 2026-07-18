@@ -28,8 +28,10 @@ import { loadMoAConfig, savePreset, deletePreset } from "./agent/moa/config-stor
 import type { ChatMessage } from "./types.js";
 import type { ToolDefinition } from "./types.js";
 import { detectUproject, loadUproject, ueContext, type UeProject } from "./ue/project.js";
+import { buildUnrealPrompt } from "./ue/unreal-skill.js";
+import { grokVersion, runGrok } from "./grok-build.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 const args = process.argv.slice(2);
 
@@ -85,6 +87,8 @@ async function main() {
       return doctor(positional.slice(1), cfg);
     case "provider":
       return providerCmd(positional.slice(1), cfg);
+    case "grok":
+      return grokCmd(positional.slice(1), cfg, modelOverride);
     case "version":
     case "-v":
     case "--version":
@@ -115,6 +119,8 @@ Commands:
   doctor                      Run diagnostics
   doctor --mcp                UE MCP server health check
   provider list               Show available providers
+  grok run "<prompt>"        Run through the installed Grok Build CLI
+  grok version                Show the Grok Build CLI version
   version                     Print version
   help                        Show this help
 
@@ -382,8 +388,45 @@ async function createToolRuntime(cfg: any): Promise<{ tools: ToolDefinition[]; m
   return { tools, mcp };
 }
 
+async function grokCmd(args: string[], cfg: any, modelOverride?: string) {
+  const sub = args[0] ?? "run";
+  if (sub === "version") {
+    console.log(await grokVersion(process.env.GROK_BUILD_PATH));
+    return;
+  }
+  if (sub !== "run") {
+    console.error('Usage: unreal-agent grok run "<prompt>" | unreal-agent grok version');
+    process.exit(1);
+  }
+  const prompt = args.slice(1).join(" ").trim();
+  if (!prompt) {
+    console.error('Usage: unreal-agent grok run "<prompt>"');
+    process.exit(1);
+  }
+  const project = await detectProject(cfg);
+  const effectivePrompt = `${buildUnrealPrompt(project ? ueContext(project) : undefined)}\n\n## User task\n${prompt}`;
+  console.error(`[unreal-agent] engine=grok-build cwd=${process.cwd()}${project ? ` uproject=${project.uprojectPath}` : ""}`);
+  try {
+    await runGrok({
+      prompt: effectivePrompt,
+      cwd: process.cwd(),
+      model: modelOverride ?? process.env.GROK_MODEL,
+      alwaysApprove: process.env.UNREAL_AGENT_ALWAYS_APPROVE === "1",
+      noPlan: process.env.UNREAL_AGENT_NO_PLAN === "1",
+      onEvent: (event) => {
+        if (event.type === "text" && typeof event.data === "string") process.stdout.write(event.data);
+        else if (event.type === "thought" && typeof event.data === "string") console.error(`\n[grok] ${event.data}`);
+      },
+    });
+    process.stdout.write("\n");
+  } catch (error: any) {
+    console.error(`[unreal-agent] Grok Build failed: ${error?.message ?? error}`);
+    process.exit(1);
+  }
+}
+
 function buildSystemPrompt(project: UeProject | null): string {
-  let p = `You are Unreal Agent, a coding assistant specifically for Unreal Engine 5 projects.
+  let p = buildUnrealPrompt(project ? ueContext(project) : undefined) + `
 
 You have filesystem tools available (read, write, edit, grep, find, ls, bash) and \
 MCP tools exposed by the connected UE MCP server when available.
@@ -399,9 +442,6 @@ When asked to modify a UE project:
 
 Be precise about paths. Use absolute paths or paths relative to the project root.`;
 
-  if (project) {
-    p += `\n\n${ueContext(project)}`;
-  }
   return p;
 }
 

@@ -1,8 +1,12 @@
 # Unreal Agent
 
-**Task-specific coding harness for Unreal Engine 5.**
+**Task-specific Unreal Engine 5 agent with Grok Build + editor MCP integration.**
 
-Built fresh, separate from DuckHive-CLI and the existing CodingHarness. Connects to the UE 5.8 native MCP server at `http://127.0.0.1:8000/mcp` (or any MCP-compatible server you point it at).
+The current implementation has two execution paths: a focused OpenAI-compatible
+fallback loop and a first-class Grok Build headless path. Grok Build owns the
+filesystem/tool loop; this project supplies the Unreal-specific skill and
+project context. It connects to the UE 5.8 native MCP server at
+`http://127.0.0.1:8000/mcp` (or any MCP-compatible server you point it at).
 
 `★ Insight ─────────────────────────────────────`
 - Built-in provider profiles for MiniMax, LM Studio, Ollama, OpenAI, Grok, and OpenRouter
@@ -10,6 +14,8 @@ Built fresh, separate from DuckHive-CLI and the existing CodingHarness. Connects
 - HTTP-only MCP client (UE 5.8 native runs over HTTP POST + JSON-RPC 2.0)
 - Reads `.uproject` and injects UE context into every system prompt
 - Tool-use loop with up to 10 iterations of bash / read / write / edit / MCP
+- Hermes-derived Unreal MCP skill installed at `.grok/skills/unreal-mcp/`
+- Grok Build headless adapter with streaming output and resumable sessions
 - Interactive terminal chat loop for multi-turn UE work
 `─────────────────────────────────────────────`
 
@@ -33,6 +39,10 @@ cp .env.example .env   # fill in keys
 
 # Interactive chat
 ./bin/unreal-agent chat
+
+# Use Grok Build as the acting Unreal agent
+./bin/unreal-agent grok run "inspect the current level and build a greybox arena"
+./bin/unreal-agent grok version
 
 # MCP direct
 ./bin/unreal-agent mcp list
@@ -61,6 +71,8 @@ src/
 │   └── mcp-client.ts       MCP HTTP client (JSON-RPC 2.0 + SSE)
 └── ue/
     └── project.ts          .uproject detection + UE context builder
+    └── unreal-skill.ts      Hermes-derived Unreal MCP operating contract
+├── grok-build.ts           Grok Build headless adapter
 ```
 
 ## Tools
@@ -143,13 +155,25 @@ curl -s -X POST http://127.0.0.1:8000/mcp \
 
 MiniMax is the default, but the harness can also run against LM Studio, Ollama, OpenAI, Grok, OpenRouter, and additional OpenAI-compatible providers defined in config.
 
+## Grok Build integration
+
+The desktop app already launches Grok Build with its documented headless
+contract (`grok -p ... --cwd ... --output-format streaming-json`) and handles
+MCP, sessions, providers, MoA, and approvals. Unreal Agent now exposes that
+same contract through `unreal-agent grok run`, while the checked-in skill makes
+the agent follow the Unreal workflow from Hermes' `creative-unreal-mcp` guide:
+discover, inspect, call serially, verify, save, and report exact deliverables.
+
+The Grok path is intentionally explicit so the existing provider loop remains
+available when Grok Build is not installed.
+
 ## What's NOT here
 
 By design (this is task-specific, not a general CLI):
 
 - ❌ No council
 - ❌ No sub-agents
-- ❌ No skill system (yet)
+- ❌ No duplicate general-purpose desktop UI
 - ❌ No streaming UI
 
 Use **DuckHive-CLI** for those.

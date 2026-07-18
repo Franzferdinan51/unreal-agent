@@ -1,7 +1,7 @@
 {
   "name": "unreal-agent",
-  "version": "0.1.0",
-  "description": "Task-specific coding harness for Unreal Engine 5, MCP-aware",
+  "version": "0.2.0",
+  "description": "Unreal Engine 5 agent powered by Grok Build and editor MCP",
   "type": "module",
   "bin": {
     "unreal-agent": "./bin/unreal-agent"
